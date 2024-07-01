@@ -34,18 +34,15 @@ var training = image.select(bands).sampleRegions({
 });
 print(training);
 
-//Train classifier 1 - CART
-var classifier = ee.Classifier.smileCart().train({
-  features: training,
-  classProperty: 'landcover',
-  inputProperties: bands
-});
+// //Train classifier - CART
+// var bestClassifier = ee.Classifier.smileCart().train({
+//   features: training,
+//   classProperty: 'landcover',
+//   inputProperties: bands
+// });
 
-// // Define the hyperparameters for the Random Forest classifier
-// var numTrees = 100; // Number of trees in the forest
-// var seed = 42; // Random seed for reproducibility
 
-// // Train classifier 2 - RandomForest
+// // Train the Random Forest classifier with hyperparameters
 // var classifier = ee.Classifier.smileRandomForest({
 //   numberOfTrees: numTrees,
 //   seed: seed
@@ -55,16 +52,58 @@ var classifier = ee.Classifier.smileCart().train({
 //   inputProperties: bands
 // });
 
-// // Define the hyperparameters for the SVM classifier
-// var svmKernelType = 'RBF'; // Options include 'linear', 'polynomial', 'RBF', 'sigmoid'
-// var svmGamma = 0.5; // The kernel coefficient for 'RBF', 'poly' and 'sigmoid'
-// var svmCost = 10; // The cost parameter C for the SVM optimization
+// // Hyperparameter tuning for Random Forest
+// var numTreesList = [50, 100, 150];
+// var seedList = [0, 42, 100];
+// var bestAccuracy = 0;
+// var bestNumTrees = 0;
+// var bestSeed = 0;
 
-// // Train classifier 3 - SVM
-// var classifier = ee.Classifier.libsvm({
-//   kernelType: svmKernelType,
-//   gamma: svmGamma,
-//   cost: svmCost
+// // Validation data
+// var valNames = vWater.merge(vResidential).merge(vCommercial).merge(vVegetation).merge(vBareland);
+
+// var validation = image.select(bands).sampleRegions({
+//   collection: valNames,
+//   properties: ['landcover'],
+//   scale: 30,
+// });
+// print(validation);
+
+// // Loop through each combination of hyperparameters
+// numTreesList.forEach(function(numTrees) {
+//   seedList.forEach(function(seed) {
+//     var classifier = ee.Classifier.smileRandomForest({
+//       numberOfTrees: numTrees,
+//       seed: seed
+//     }).train({
+//       features: training,
+//       classProperty: 'landcover',
+//       inputProperties: bands
+//     });
+
+//     var classified = image.select(bands).classify(classifier);
+
+//     var testAccuracy = validation.classify(classifier).errorMatrix('landcover', 'classification');
+//     var accuracy = testAccuracy.accuracy().getInfo();
+
+//     print('Accuracy for numTrees:', numTrees, 'seed:', seed, 'is', accuracy);
+
+//     if (accuracy > bestAccuracy) {
+//       bestAccuracy = accuracy;
+//       bestNumTrees = numTrees;
+//       bestSeed = seed;
+//     }
+//   });
+// });
+
+// print('Best accuracy:', bestAccuracy);
+// print('Best numTrees:', bestNumTrees);
+// print('Best seed:', bestSeed);
+
+// // Train the best classifier
+// var bestClassifier = ee.Classifier.smileRandomForest({
+//   numberOfTrees: bestNumTrees,
+//   seed: bestSeed
 // }).train({
 //   features: training,
 //   classProperty: 'landcover',
@@ -72,8 +111,75 @@ var classifier = ee.Classifier.smileCart().train({
 // });
 
 
+
+// Hyperparameter tuning for SVM
+var kernelTypes = ['RBF', 'sigmoid'];
+var gammaList = [0.1, 0.5, 1];
+var costList = [1, 10, 100];
+var bestAccuracy = 0;
+var bestKernelType = '';
+var bestGamma = 0;
+var bestCost = 0;
+
+// Validation data
+var valNames = vWater.merge(vResidential).merge(vCommercial).merge(vVegetation).merge(vBareland);
+
+var validation = image.select(bands).sampleRegions({
+  collection: valNames,
+  properties: ['landcover'],
+  scale: 30,
+});
+print(validation);
+
+// Loop through each combination of hyperparameters
+kernelTypes.forEach(function(kernelType) {
+  gammaList.forEach(function(gamma) {
+    costList.forEach(function(cost) {
+      var classifier = ee.Classifier.libsvm({
+        kernelType: kernelType,
+        gamma: gamma,
+        cost: cost
+      }).train({
+        features: training,
+        classProperty: 'landcover',
+        inputProperties: bands
+      });
+
+      var classified = image.select(bands).classify(classifier);
+
+      var testAccuracy = validation.classify(classifier).errorMatrix('landcover', 'classification');
+      var accuracy = testAccuracy.accuracy().getInfo();
+
+      print('Accuracy for kernelType:', kernelType, 'gamma:', gamma, 'cost:', cost, 'is', accuracy);
+
+      if (accuracy > bestAccuracy) {
+        bestAccuracy = accuracy;
+        bestKernelType = kernelType;
+        bestGamma = gamma;
+        bestCost = cost;
+      }
+    });
+  });
+});
+
+print('Best accuracy:', bestAccuracy);
+print('Best kernelType:', bestKernelType);
+print('Best gamma:', bestGamma);
+print('Best cost:', bestCost);
+
+// Train the best classifier
+var bestClassifier = ee.Classifier.libsvm({
+  kernelType: bestKernelType,
+  gamma: bestGamma,
+  cost: bestCost
+}).train({
+  features: training,
+  classProperty: 'landcover',
+  inputProperties: bands
+});
+
 //Run the classification
-var classified = image.select(bands).classify(classifier);
+var classified = image.select(bands).classify(bestClassifier);
 
 //Centre the map on your training data coverage
 Map.centerObject(classNames, 11);
